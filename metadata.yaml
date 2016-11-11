@@ -1,4 +1,4 @@
-name: cinder
+name: cinder-volume
 summary: "OpenStack block storage service"
 maintainer: Ionut-Madalin Balutoiu <ibalutoiu@cloudbasesolutions.com>
 description: |
