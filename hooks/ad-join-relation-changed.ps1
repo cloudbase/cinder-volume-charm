@@ -30,21 +30,16 @@ try {
             Write-JujuWarning "AD user credentials are not already set"
             exit 0
         }
-
         $adUser = $adCtxt["adcredentials"][0]["username"]
         $adUserPassword = $adCtxt["adcredentials"][0]["password"]
-
         Grant-PrivilegesOnDomainUser -Username $adUser
-
         [String[]]$cinderServices = Get-CinderServiceNames
         foreach($svcName in $cinderServices) {
             Write-JujuInfo "Setting AD user for service '$svcName'"
-
             Stop-Service $svcName
             Set-ServiceLogon -Services $svcName -UserName $adUser -Password $adUserPassword
             Start-Service $svcName
         }
-
         Invoke-WSFCRelationJoinedHook
         Invoke-SMBShareRelationJoinedHook
         Invoke-ConfigChangedHook

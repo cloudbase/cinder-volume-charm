@@ -24,20 +24,16 @@ Import-Module WSFCCharmUtils
 
 function Get-EnabledBackends {
     $cfg = Get-JujuCharmConfig
-
     if(!$cfg['enabled-backends']) {
         # Defaults to only iscsi backend with local storage
         return @($ISCSI_BACKEND_NAME)
     }
-
     $backends = $cfg['enabled-backends'].Split() | Where-Object { $_ -ne "" }
-
     foreach($b in $backends) {
         if($b -notin $CINDER_VALID_BACKENDS) {
             Throw "'$b' is not a valid backend."
         }
     }
-
     return $backends
 }
 
@@ -45,21 +41,17 @@ function New-ExeServiceWrapper {
     $pythonDir = Get-PythonDir -InstallDir $CINDER_INSTALL_DIR
     $python = Join-Path $pythonDir "python.exe"
     $updateWrapper = Join-Path $pythonDir "Scripts\UpdateWrappers.py"
-
     $cmd = @($python, $updateWrapper, "cinder-volume = cinder.cmd.volume:main")
     Invoke-JujuCommand -Command $cmd
 }
 
 function Get-CharmServices {
     $openstackVersion = Get-OpenstackVersion
-
     $pythonDir = Get-PythonDir -InstallDir $CINDER_INSTALL_DIR
     $pythonExe = Join-Path $pythonDir "python.exe"
     $cinderScript = Join-Path $pythonDir "Scripts\cinder-volume-script.py"
-
     $serviceWrapperCinderSMB = Get-ServiceWrapper -Service "CinderSMB" -InstallDir $CINDER_INSTALL_DIR
     $cinderSMBConfig = Join-Path $CINDER_INSTALL_DIR "etc\cinder\cinder-smb.conf"
-
     # NOTE(ibalutoiu):
     # Only 'CinderISCSI' should be specified, but the Mitaka MSI doesn't
     # generate it due to a known bug and only 'CinderSMB' wrapper is present.
@@ -69,7 +61,6 @@ function Get-CharmServices {
         $serviceWrapperCinderISCSI = Get-ServiceWrapper -Service "CinderSMB" -InstallDir $CINDER_INSTALL_DIR
     }
     $cinderISCSIConfig = Join-Path $CINDER_INSTALL_DIR "etc\cinder\cinder-iscsi.conf"
-
     $jujuCharmServices = @{
         'cinder-smb' = @{
             "template" = "$openstackVersion\cinder-smb.conf"
@@ -147,17 +138,14 @@ function Get-CharmServices {
             )
         }
     }
-
     return $jujuCharmServices
 }
 
 function Get-ClusterServiceRoleName {
     $cfg = Get-JujuCharmConfig
-
     if(!$cfg['cluster-role-name']) {
         Throw "Cluster service role name config option is not set"
     }
-
     return $cfg['cluster-role-name']
 }
 
@@ -166,14 +154,12 @@ function Get-SMBShareContext {
         "share" = $null
     }
     $ctxt = Get-JujuRelationContext -Relation "smb-share" -RequiredContext $requiredCtxt
-
     if(!$ctxt.Count) {
         return @{}
     }
-
     $sharesConfigFile = Join-Path $CINDER_INSTALL_DIR "etc\cinder\smbfs_shares_list"
-    [System.IO.File]::WriteAllLines($sharesConfigFile, $ctxt['share'])
-
+    $shares = [string[]]$ctxt['share']
+    [System.IO.File]::WriteAllLines($sharesConfigFile, $shares)
     return @{
         "shares_config_file" = "$sharesConfigFile"
     }
@@ -183,26 +169,22 @@ function Get-ClusterServiceContext {
     $requiredCtxt = @{
         'static-address' = $null
     }
-
     $ctxt = Get-JujuRelationContext -Relation "cluster-service" `
                                     -RequiredContext $requiredCtxt
     if(!$ctxt) {
         return @{}
     }
-
     return $ctxt
 }
 
 function Get-CharmConfigContext {
     $ctxt = Get-ConfigContext
-
     if(!$ctxt['log_dir']) {
         $ctxt['log_dir'] = "$CINDER_DEFAULT_LOG_DIR"
     }
     if (!(Test-Path $ctxt['log_dir'])) {
         New-Item -ItemType Directory -Path $ctxt['log_dir']
     }
-
     if(!$ctxt['max_used_space_ratio']) {
         $ctxt['max_used_space_ratio'] = $CINDER_DEFAULT_MAX_USED_SPACE_RATIO
     }
@@ -212,20 +194,18 @@ function Get-CharmConfigContext {
     if(!$ctxt['default_volume_format']) {
         $ctxt['default_volume_format'] = $CINDER_DEFAULT_DEFAULT_VOLUME_FORMAT
     }
-
     return $ctxt
 }
 
 function Get-SystemContext {
     $ctxt = @{
         'my_ip' = Get-JujuUnitPrivateIP
-        'host' = $COMPUTERNAME
+        'host' = [System.Net.Dns]::GetHostName()
         'lock_dir' = "$CINDER_DEFAULT_LOCK_DIR"
         'iscsi_lun_path' = "$CINDER_DEFAULT_ISCSI_LUN_DIR"
         'image_conversion_dir'= "$CINDER_DEFAULT_IMAGE_CONVERSION_DIR"
         'mount_point_base' = "$CINDER_DEFAULT_MOUNT_POINT_BASE_DIR"
     }
-
     $charmDirs = @(
         $ctxt['lock_dir'],
         $ctxt['iscsi_lun_path'],
@@ -237,18 +217,15 @@ function Get-SystemContext {
             New-Item -ItemType Directory -Path $dir
         }
     }
-
     $cfg = Get-JujuCharmConfig
     if($cfg['hostname']) {
         $ctxt['host'] = $cfg['hostname']
     }
-
     $clusterSvcCtxt = Get-ClusterServiceContext
     if($clusterSvcCtxt['static-address']) {
         $ctxt['my_ip'] = $clusterSvcCtxt['static-address']
         $ctxt['host'] = Get-ClusterServiceRoleName
     }
-
     return $ctxt
 }
 
@@ -261,15 +238,12 @@ function Install-CinderFromZip {
     if(Test-Path $CINDER_INSTALL_DIR) {
         Remove-Item -Recurse -Force $CINDER_INSTALL_DIR
     }
-
     Write-JujuWarning "Unzipping '$InstallerPath' to '$CINDER_INSTALL_DIR'"
     Expand-ZipArchive -ZipFile $InstallerPath -Destination $CINDER_INSTALL_DIR | Out-Null
-
     $configDir = Join-Path $CINDER_INSTALL_DIR "etc\cinder"
     if (!(Test-Path $configDir)) {
         New-Item -ItemType Directory $configDir | Out-Null
     }
-
     Add-ToSystemPath "$CINDER_INSTALL_DIR\Bin"
     New-ExeServiceWrapper | Out-Null
 }
@@ -286,7 +260,6 @@ function Install-CinderFromMSI {
                      "ISCSIDRIVER=1",
                      "SMBDRIVER=1")
     Install-Msi -Installer $installerPath -LogFilePath $logFile -ExtraArgs $extraParams
-
     # Delete default Windows services generated by the MSI installer.
     # Charm will generate the Windows services later on.
     $serviceNames = @(
@@ -299,9 +272,7 @@ function Install-CinderFromMSI {
 
 function Install-Cinder {
     Write-JujuWarning "Running Cinder install"
-
     $installerPath = Get-InstallerPath -Project 'Cinder'
-
     $installerExtension = $installerPath.Split('.')[-1]
     switch($installerExtension) {
         "zip" {
@@ -314,18 +285,15 @@ function Install-Cinder {
             Throw "Unknown installer extension: '$installerExtension'"
         }
     }
-
     $release = Get-OpenstackVersion
     Set-JujuApplicationVersion -Version $CINDER_PRODUCT[$release]['version']
     Set-CharmState -Namespace "cinder_volume" -Key "release_installed" -Value $release
-
     Remove-Item $installerPath
 }
 
 function Enable-RequiredWindowsFeatures {
     $requiredFeatures = @()
     $requiredServices = @()
-
     [String[]]$enabledBackends = Get-EnabledBackends
     if($CINDER_ISCSI_BACKEND_NAME -in $enabledBackends) {
         if(Get-IsNanoServer) {
@@ -335,11 +303,9 @@ function Enable-RequiredWindowsFeatures {
         }
         $requiredServices += @('wintarget', 'msiscsi')
     }
-
     if($requiredFeatures) {
         Install-WindowsFeatures -Features $requiredFeatures
     }
-
     foreach($service in $requiredServices) {
         Enable-Service -Name $service
         Start-Service -Name $service
@@ -356,6 +322,8 @@ function New-CharmServices {
                         -DisplayName $charmServices[$key]["display_name"] `
                         -Description $charmServices[$key]["description"] `
                         -Confirm:$false
+            Start-ExternalCommand { sc.exe failure $charmServices[$key]["service"] reset=5 actions=restart/1000 }
+            Start-ExternalCommand { sc.exe failureflag $charmServices[$key]["service"] 1 }
             Stop-Service -Name $charmServices[$key]["service"]
         }
     }
@@ -365,23 +333,19 @@ function Get-ClusterServices {
     $services = @()
     [String[]]$serviceNames = Get-CinderServiceNames
     [String[]]$enabledBackends = Get-EnabledBackends
-
     if($CINDER_ISCSI_BACKEND_NAME -in $enabledBackends) {
         $serviceNames += 'WinTarget'
     }
-
     foreach ($serviceName in $serviceNames) {
         $service = Get-ManagementObject -Class Win32_Service -Filter "Name='$serviceName'"
         $serviceParams = $service.PathName -split ' '
         $startupParams = $serviceParams[1..($serviceParams.Length)]
-
         $services += @{
             'ServiceName' = $service.Name
             'DisplayName' = $service.DisplayName
             'StartupParameters' = $startupParams -join ' '
         }
     }
-
     return $services
 }
 
@@ -389,46 +353,39 @@ function Get-CinderServiceNames {
     $charmServices = Get-CharmServices
     $serviceNames = @()
     [String[]]$enabledBackends = Get-EnabledBackends
-
     if($CINDER_SMB_BACKEND_NAME -in $enabledBackends) {
         $serviceNames += $charmServices['cinder-smb']['service']
     }
     if($CINDER_ISCSI_BACKEND_NAME -in $enabledBackends) {
         $serviceNames += $charmServices['cinder-iscsi']['service']
     }
-
     return $serviceNames
 }
 
 function New-CinderConfigFiles {
     [String[]]$enabledBackends = Get-EnabledBackends
     $charmServices = Get-CharmServices
-
     if($CINDER_SMB_BACKEND_NAME -in $enabledBackends) {
         $smbIncompleteRelations = New-ConfigFile -ContextGenerators $charmServices['cinder-smb']['context_generators'] `
                                                  -Template $charmServices['cinder-smb']['template'] `
                                                  -OutFile $charmServices['cinder-smb']['config']
     }
-
     if($CINDER_ISCSI_BACKEND_NAME -in $enabledBackends) {
         $iscsiIncompleteRelations = New-ConfigFile -ContextGenerators $charmServices['cinder-iscsi']['context_generators'] `
                                                    -Template $charmServices['cinder-iscsi']['template'] `
                                                    -OutFile $charmServices['cinder-iscsi']['config']
     }
-
     $incompleteRelations = $smbIncompleteRelations + $iscsiIncompleteRelations | Select-Object -Unique
-
     return $incompleteRelations
 }
 
 function Set-ClusterServiceRelation {
     [Array]$clusterServices = Get-ClusterServices
     $relationData = @{
-        "computer-name" = $COMPUTERNAME
+        "computer-name" = [System.Net.Dns]::GetHostName()
         "role-name" = Get-ClusterServiceRoleName
         "services" = Get-MarshaledObject -Object $clusterServices
     }
-
     $rids = Get-JujuRelationIds -Relation 'cluster-service'
     foreach ($rid in $rids) {
         Set-JujuRelation -RelationId $rid -Settings $relationData
@@ -438,7 +395,6 @@ function Set-ClusterServiceRelation {
 function Uninstall-Cinder {
     $productNames = $CINDER_PRODUCT[$SUPPORTED_OPENSTACK_RELEASES].Name
     $productNames += $CINDER_PRODUCT['beta_name']
-
     $installedProductName = $null
     foreach($name in $productNames) {
         if(Get-ComponentIsInstalled -Name $name -Exact) {
@@ -446,23 +402,19 @@ function Uninstall-Cinder {
             break
         }
     }
-
     if($installedProductName) {
         Write-JujuWarning "Uninstalling '$installedProductName'"
         Uninstall-WindowsProduct -Name $installedProductName
     }
-
     $serviceNames = @(
         $CINDER_VOLUME_SERVICE_NAME,
         $CINDER_VOLUME_ISCSI_SERVICE_NAME,
         $CINDER_VOLUME_SMB_SERVICE_NAME
     )
     Remove-WindowsServices -Names $serviceNames
-
     if(Test-Path $CINDER_INSTALL_DIR) {
         Remove-Item -Recurse -Force $CINDER_INSTALL_DIR
     }
-
     Remove-CharmState -Namespace "cinder_volume" -Key "release_installed"
 }
 
@@ -485,7 +437,6 @@ function Invoke-InstallHook {
             Write-JujuWarning "Failed to disable antivirus: $_"
         }
     }
-
     # Set machine to use high performance settings.
     try {
         Set-PowerProfile -PowerProfile Performance
@@ -493,14 +444,11 @@ function Invoke-InstallHook {
         # No need to error out the hook if this fails.
         Write-JujuWarning "Failed to set power scheme."
     }
-
     Start-TimeResync
-
     $renameReboot = Rename-JujuUnit
     if ($renameReboot) {
         Invoke-JujuReboot -Now
     }
-
     Install-Cinder
 }
 
@@ -512,14 +460,11 @@ function Invoke-ConfigChangedHook {
     Enable-RequiredWindowsFeatures
     Start-UpgradeOpenStackVersion
     New-CharmServices
-
     $cfg = Get-JujuCharmConfig
     [String[]]$incompleteRelations = New-CinderConfigFiles
     if (!$incompleteRelations.Count) {
         Set-ClusterServiceRelation
-
         [String[]]$serviceNames = Get-CinderServiceNames
-
         if ($cfg['delay-service-start']) {
             $clusterServiceCtxt = Get-ClusterServiceContext
             if(!$clusterServiceCtxt.Count) {
@@ -575,7 +520,6 @@ function Invoke-SMBShareRelationJoinedHook {
         Write-JujuWarning "AD context is not complete yet"
         return
     }
-
     $accounts = @()
     $rids = Get-JujuRelationIds -Relation 'cinder-accounts'
     foreach($rid in $rids) {
@@ -593,7 +537,6 @@ function Invoke-SMBShareRelationJoinedHook {
             }
         }
     }
-
     $cfg = Get-JujuCharmConfig
     $adGroup = "{0}\{1}" -f @($adCtxt['netbiosname'], $cfg['ad-computer-group'])
     if($adGroup -notin $accounts) {
@@ -603,13 +546,11 @@ function Invoke-SMBShareRelationJoinedHook {
     if($adUser -notin $accounts) {
         $accounts += $adUser
     }
-
     $marshalledAccounts = Get-MarshaledObject -Object $accounts
     $settings = @{
         "share-name" = "cinder-shares"
         "accounts" = $marshalledAccounts
     }
-
     $rids = Get-JujuRelationIds -Relation "smb-share"
     foreach ($rid in $rids) {
         Set-JujuRelation -RelationId $rid -Settings $settings
@@ -619,13 +560,11 @@ function Invoke-SMBShareRelationJoinedHook {
 function Invoke-CinderServiceRelationJoinedHook {
     $ctxt = Get-SystemContext
     [String[]]$enabledBackends = Get-EnabledBackends
-
     $relationSettings = @{
         'ip' = $ctxt['my_ip']
         'hostname' = $ctxt['hostname']
         'enabled-backends' = $enabledBackends -join ','
     }
-
     $rids = Get-JujuRelationIds -Relation "cinder-volume-service"
     foreach ($rid in $rids) {
         Set-JujuRelation -RelationId $rid -Settings $relationSettings
@@ -638,7 +577,6 @@ function Invoke-WSFCRelationJoinedHook {
         Set-ClusterableStatus -Ready $false -Relation "failover-cluster"
         return
     }
-
     if (Get-IsNanoServer) {
         $features = @('FailoverCluster-NanoServer')
     } else {
@@ -650,12 +588,10 @@ function Invoke-WSFCRelationJoinedHook {
 
 function Invoke-AMQPRelationJoinedHook {
     $username, $vhost = Get-RabbitMQConfig
-
     $relationSettings = @{
         'username' = $username
         'vhost' = $vhost
     }
-
     $rids = Get-JujuRelationIds -Relation "amqp"
     foreach ($rid in $rids){
         Set-JujuRelation -RelationId $rid -Settings $relationSettings
@@ -664,7 +600,6 @@ function Invoke-AMQPRelationJoinedHook {
 
 function Invoke-MySQLDBRelationJoinedHook {
     $database, $databaseUser = Get-MySQLConfig
-
     $settings = @{
         'database' = $database
         'username' = $databaseUser

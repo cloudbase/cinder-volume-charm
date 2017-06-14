@@ -16,14 +16,14 @@ options:
       to avoid cinder reporting wrong storage available.
   openstack-version:
     type: string
-    default: newton
+    default: ocata
     description: |
       Version of Openstack Cinder to install. This is used to generate
       conf file and to choose the default installer url in case it is not
       specified in the config option. Choices are:
-       * liberty
        * mitaka
        * newton
+       * ocata
   enabled-backends:
     type: string
     default: "iscsi"

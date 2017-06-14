@@ -25,24 +25,19 @@ try {
     $settings = @{
         'computername' = [System.Net.Dns]::GetHostName()
     }
-
     $cfg = Get-JujuCharmConfig
-
     if($cfg['ad-user']) {
         $adUsers = @{
             $cfg['ad-user'] = @("Domain Admins", "Users")
         }
         $settings['users'] = Get-MarshaledObject $adUsers
     }
-
     if($cfg['ad-computer-group']) {
         $settings['computer-group'] = $cfg['ad-computer-group']
     }
-
     if($cfg['ad-ou']) {
         $settings['ou-name'] = $cfg['ad-ou']
     }
-
     $rids = Get-JujuRelationIds -Relation "ad-join"
     foreach ($rid in $rids) {
         Set-JujuRelation -RelationId $rid -Settings $settings
