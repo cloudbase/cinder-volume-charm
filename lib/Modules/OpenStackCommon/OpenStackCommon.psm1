@@ -21,7 +21,7 @@ Import-Module JujuHelper
 
 
 $DEFAULT_OPENSTACK_VERSION = 'ocata'
-$SUPPORTED_OPENSTACK_RELEASES = @('mitaka', 'newton', 'ocata')
+$SUPPORTED_OPENSTACK_RELEASES = @('mitaka', 'newton', 'ocata', 'stein', 'train')
 $DEFAULT_JUJU_RESOURCE_CONTENT = "Cloudbase default Juju resource"
 
 # Nova constants
@@ -57,7 +57,6 @@ $NOVA_PRODUCT = @{
         'compute_driver' = 'compute_hyperv.driver.HyperVDriver'
         'compute_cluster_driver' = 'compute_hyperv.cluster.driver.HyperVClusterDriver'
     }
-
 }
 $NOVA_CHARM_PORTS = @{
     "tcp" = @("5985", "5986", "3343", "445", "135", "139")
@@ -109,6 +108,22 @@ $CINDER_PRODUCT = @{
             'zip' = 'https://cloudbase.it/downloads/CinderVolumeSetup_Ocata_10_0_0.zip#md5=7a5d9dcdf4b137194f41214599b929a9'
         }
     }
+    'stein' = @{
+        'name' = 'OpenStack Cinder Volume Stein'
+        'version' = '14.0.2'
+        'default_installer_urls' = @{
+            'msi' = 'https://cloudbase.it/downloads/CinderVolumeSetup_Stein_14_0_2.msi'
+            'zip' = 'https://cloudbase.it/downloads/CinderVolumeSetup_Stein_14_0_2.zip'
+        }
+    }
+    'train' = @{ 
+        'name' = 'OpenStack Cinder Volume Train'
+        'version' = '15.0.0'
+        'default_installer_urls' = @{
+            'msi' = 'https://cloudbase.it/downloads/CinderVolumeSetup_Train_15_0_0.msi'
+            'zip' = 'https://cloudbase.it/downloads/CinderVolumeSetup_Train_15_0_0.zip'
+        }
+    }
 }
 $CINDER_INSTALL_DIR = Join-Path ${env:ProgramFiles} "Cloudbase Solutions\OpenStack\Cinder"
 $CINDER_ISCSI_BACKEND_NAME = 'iscsi'
@@ -117,6 +132,11 @@ $CINDER_VALID_BACKENDS = @($CINDER_ISCSI_BACKEND_NAME, $CINDER_SMB_BACKEND_NAME)
 $CINDER_VOLUME_SERVICE_NAME = "cinder-volume"
 $CINDER_VOLUME_ISCSI_SERVICE_NAME = "cinder-volume-iscsi"
 $CINDER_VOLUME_SMB_SERVICE_NAME = "cinder-volume-smb"
+# TODO(gsamfira): aggregate the iscsi and smb backends into a single
+# service.
+$CINDER_BACKUP_SMB_SERVICE_NAME = "cinder-backup-smb"
+$CINDER_BACKUP_ISCSI_SERVICE_NAME = "cinder-backup-iscsi"
+
 $CINDER_DEFAULT_LOCK_DIR = Join-Path ${env:SystemDrive} "OpenStack\Lock"
 $CINDER_DEFAULT_ISCSI_LUN_DIR = Join-Path ${env:SystemDrive} "OpenStack\iSCSIVirtualDisks"
 $CINDER_DEFAULT_IMAGE_CONVERSION_DIR = Join-Path ${env:SystemDrive} "OpenStack\ImageConversionDir"
@@ -185,7 +205,7 @@ function Get-ServiceWrapper {
     $wrapperName = ("OpenStackService{0}.exe" -f $Service)
     $svcPath = Join-Path $InstallDir ("bin\{0}" -f $wrapperName)
     if (!(Test-Path $svcPath)) {
-        $svcPath = Join-Path $InstallDir "bin\OpenStackService.exe"
+        $svcPath = Join-Path $InstallDir "bin\CinderVolumeService.exe"
         if (!(Test-Path $svcPath)) {
             Throw "Failed to find service wrapper"
         }

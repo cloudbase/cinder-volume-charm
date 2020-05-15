@@ -22,6 +22,18 @@ Import-Module ADCharmUtils
 Import-Module WSFCCharmUtils
 
 
+function Get-CinderBackupContext {
+    $requiredCtxt =  @{
+        "cinder_backup_config" = $null;
+    }
+    $ctxt = Get-JujuRelationContext -Relation "cinder-backup" -RequiredContext $requiredCtxt
+    if(!$ctxt.Count) {
+        return @{}
+    }
+    return $ctxt
+}
+
+
 function Get-EnabledBackends {
     $cfg = Get-JujuCharmConfig
     if(!$cfg['enabled-backends']) {
@@ -43,6 +55,8 @@ function New-ExeServiceWrapper {
     $updateWrapper = Join-Path $pythonDir "Scripts\UpdateWrappers.py"
     $cmd = @($python, $updateWrapper, "cinder-volume = cinder.cmd.volume:main")
     Invoke-JujuCommand -Command $cmd
+    $cmd = @($python, $updateWrapper, "cinder-backup = cinder.cmd.backup:main")
+    Invoke-JujuCommand -Command $cmd
 }
 
 function Get-CharmServices {
@@ -50,8 +64,13 @@ function Get-CharmServices {
     $pythonDir = Get-PythonDir -InstallDir $CINDER_INSTALL_DIR
     $pythonExe = Join-Path $pythonDir "python.exe"
     $cinderScript = Join-Path $pythonDir "Scripts\cinder-volume-script.py"
+    $cinderBackupScript = Join-Path $pythonDir "Scripts\cinder-backup-script.py"
+    
     $serviceWrapperCinderSMB = Get-ServiceWrapper -Service "CinderSMB" -InstallDir $CINDER_INSTALL_DIR
-    $cinderSMBConfig = Join-Path $CINDER_INSTALL_DIR "etc\cinder\cinder-smb.conf"
+
+    $cinderSMBConfig = Join-Path $CINDER_INSTALL_DIR "etc\cinder-smb.conf"
+    $cinderISCSIConfig = Join-Path $CINDER_INSTALL_DIR "etc\cinder-iscsi.conf"
+
     # NOTE(ibalutoiu):
     # Only 'CinderISCSI' should be specified, but the Mitaka MSI doesn't
     # generate it due to a known bug and only 'CinderSMB' wrapper is present.
@@ -60,7 +79,8 @@ function Get-CharmServices {
     } catch {
         $serviceWrapperCinderISCSI = Get-ServiceWrapper -Service "CinderSMB" -InstallDir $CINDER_INSTALL_DIR
     }
-    $cinderISCSIConfig = Join-Path $CINDER_INSTALL_DIR "etc\cinder\cinder-iscsi.conf"
+    $clusterServiceCtx = Get-ClusterServiceContext
+
     $jujuCharmServices = @{
         'cinder-smb' = @{
             "template" = "$openstackVersion\cinder-smb.conf"
@@ -70,6 +90,11 @@ function Get-CharmServices {
             "description" = "Service wrapper for OpenStack Cinder Volume"
             "display_name" = "OpenStack Cinder Volume Service (SMB)"
             "context_generators" = @(
+                @{
+                    "generator" = (Get-Item "function:Get-CinderBackupContext").ScriptBlock
+                    "relation" = "cinder-backup"
+                    "mandatory" = $false
+                },
                 @{
                     "generator" = (Get-Item "function:Get-MySQLContext").ScriptBlock
                     "relation" = "mysql-db"
@@ -99,8 +124,21 @@ function Get-CharmServices {
                     "generator" = (Get-Item "function:Get-SMBShareContext").ScriptBlock
                     "relation" = "smb-share"
                     "mandatory" = $true
+                },
+                @{
+                    "generator" = (Get-Item "function:Get-EtcdContext").ScriptBlock
+                    "relation" = "etcd"
+                    "mandatory" = ($clusterServiceCtx.Count -gt 0)
                 }
             )
+        }
+        'cinder-backup-smb' = @{
+            "service" = $CINDER_BACKUP_SMB_SERVICE_NAME 
+            "service_bin_path" = "`"$serviceWrapperCinderSMB`" cinder-backup-smb `"$pythonExe`" `"$cinderBackupScript`" --config-file `"$cinderSMBConfig`""
+            "config" = "$cinderSMBConfig"
+            "description" = "Service wrapper for OpenStack Cinder Backup"
+            "display_name" = "OpenStack Cinder Backup Service (SMB)"
+            "context_generators" = @()
         }
         'cinder-iscsi' = @{
             "template" = "$openstackVersion\cinder-iscsi.conf"
@@ -110,6 +148,11 @@ function Get-CharmServices {
             "description" = "Service wrapper for OpenStack Cinder Volume"
             "display_name" = "OpenStack Cinder Volume Service (ISCSI)"
             "context_generators" = @(
+                @{
+                    "generator" = (Get-Item "function:Get-CinderBackupContext").ScriptBlock
+                    "relation" = "cinder-backup"
+                    "mandatory" = $false
+                },
                 @{
                     "generator" = (Get-Item "function:Get-MySQLContext").ScriptBlock
                     "relation" = "mysql-db"
@@ -134,10 +177,24 @@ function Get-CharmServices {
                     "generator" = (Get-Item "function:Get-SystemContext").ScriptBlock
                     "relation" = "system"
                     "mandatory" = $true
+                },
+                @{
+                    "generator" = (Get-Item "function:Get-EtcdContext").ScriptBlock
+                    "relation" = "etcd"
+                    "mandatory" = ($clusterServiceCtx.Count -gt 0)
                 }
             )
         }
+        'cinder-backup-iscsi' = @{
+            "service" = $CINDER_BACKUP_ISCSI_SERVICE_NAME 
+            "service_bin_path" = "`"$serviceWrapperCinderISCSI`" cinder-backup-smb `"$pythonExe`" `"$cinderBackupScript`" --config-file `"$cinderISCSIConfig`""
+            "config" = "$cinderSMBConfig"
+            "description" = "Service wrapper for OpenStack Cinder Backup"
+            "display_name" = "OpenStack Cinder Backup Service (iSCSI)"
+            "context_generators" = @()
+        }
     }
+
     return $jujuCharmServices
 }
 
@@ -157,7 +214,7 @@ function Get-SMBShareContext {
     if(!$ctxt.Count) {
         return @{}
     }
-    $sharesConfigFile = Join-Path $CINDER_INSTALL_DIR "etc\cinder\smbfs_shares_list"
+    $sharesConfigFile = Join-Path $CINDER_INSTALL_DIR "etc\smbfs_shares_list"
     $shares = [string[]]$ctxt['share']
     [System.IO.File]::WriteAllLines($sharesConfigFile, $shares)
     return @{
@@ -240,7 +297,7 @@ function Install-CinderFromZip {
     }
     Write-JujuWarning "Unzipping '$InstallerPath' to '$CINDER_INSTALL_DIR'"
     Expand-ZipArchive -ZipFile $InstallerPath -Destination $CINDER_INSTALL_DIR | Out-Null
-    $configDir = Join-Path $CINDER_INSTALL_DIR "etc\cinder"
+    $configDir = Join-Path $CINDER_INSTALL_DIR "etc"
     if (!(Test-Path $configDir)) {
         New-Item -ItemType Directory $configDir | Out-Null
     }
@@ -322,6 +379,7 @@ function New-CharmServices {
                         -DisplayName $charmServices[$key]["display_name"] `
                         -Description $charmServices[$key]["description"] `
                         -Confirm:$false
+            Set-Service $charmServices[$key]["service"] -StartupType Disabled
             Start-ExternalCommand { sc.exe failure $charmServices[$key]["service"] reset=5 actions=restart/1000 }
             Start-ExternalCommand { sc.exe failureflag $charmServices[$key]["service"] 1 }
             Stop-Service -Name $charmServices[$key]["service"]
@@ -352,12 +410,19 @@ function Get-ClusterServices {
 function Get-CinderServiceNames {
     $charmServices = Get-CharmServices
     $serviceNames = @()
+    $backupCtx = Get-CinderBackupContext
     [String[]]$enabledBackends = Get-EnabledBackends
     if($CINDER_SMB_BACKEND_NAME -in $enabledBackends) {
         $serviceNames += $charmServices['cinder-smb']['service']
+        if ($backupCtx.Count -gt 0){
+            $serviceNames += $charmServices['cinder-backup-smb']['service']
+        }
     }
     if($CINDER_ISCSI_BACKEND_NAME -in $enabledBackends) {
         $serviceNames += $charmServices['cinder-iscsi']['service']
+        if ($backupCtx.Count -gt 0){
+            $serviceNames += $charmServices['cinder-backup-iscsi']['service']
+        }
     }
     return $serviceNames
 }
@@ -427,6 +492,43 @@ function Start-UpgradeOpenStackVersion {
         Install-Cinder
     }
 }
+
+
+function Get-EtcdContext {
+    Write-JujuWarning "Generating context for etcd"
+    $required = @{
+        "client_ca" = $null
+        "client_cert" = $null
+        "client_key" = $null
+        "connection_string" = $null
+    }
+    $optionalCtx = @{
+        "version" = $null
+    }
+    $ctx = Get-JujuRelationContext -Relation 'etcd' -RequiredContext $required -OptionalContext $optionalCtx
+    if (!$ctx.Count) {
+        Write-JujuWarning "Missing required relation settings from Etcd. Peer not ready?"
+        return @{}
+    }
+    # Write etcd certs
+    $etcd_ca_file = Join-Path $CINDER_INSTALL_DIR "etc\etcd-ca.crt"
+    $etcd_cert_file = Join-Path $CINDER_INSTALL_DIR "etc\etcd-client.crt"
+    $etcd_key_file = Join-Path $CINDER_INSTALL_DIR "etc\etcd-client.key"
+    # Remove the current certificates (if any) and add the new ones
+    Remove-Item -Recurse -Force "$etcd_ca_file" -ErrorAction SilentlyContinue
+    Remove-Item -Recurse -Force "$etcd_cert_file" -ErrorAction SilentlyContinue
+    Remove-Item -Recurse -Force "$etcd_key_file" -ErrorAction SilentlyContinue
+    # Write the new certificates
+    Set-Content $etcd_ca_file $ctx["client_ca"]
+    Set-Content $etcd_cert_file $ctx["client_cert"]
+    Set-Content $etcd_key_file $ctx["client_key"]
+    # Get first url from the connection string
+    $etcd_url = $ctx["connection_string"].Split(',')
+    # Set additional contexts
+    $ctx["backend_url"] = "etcd3+{0}?ca_cert={1}&cert_key={2}&cert_cert={3}" -f @($etcd_url[0], [uri]::EscapeUriString("$etcd_ca_file"), [uri]::EscapeUriString("$etcd_key_file"), [uri]::EscapeUriString("$etcd_cert_file"))
+    return $ctx
+}
+
 
 function Invoke-InstallHook {
     if(!(Get-IsNanoServer)){
@@ -557,6 +659,30 @@ function Invoke-SMBShareRelationJoinedHook {
     }
 }
 
+function Invoke-CinderBackupRelationJoinedHook {
+    $adCtxt = Get-ActiveDirectoryContext
+    if(!$adCtxt.Count -or !$adCtxt["adcredentials"]) {
+        Write-JujuWarning "AD context is not complete yet"
+        return
+    }
+
+    $cfg = Get-JujuCharmConfig
+    $adGroup = "{0}\{1}" -f @($adCtxt['netbiosname'], $cfg['ad-computer-group'])
+    $adUser = $adCtxt["adcredentials"][0]["username"]
+    $adPassword = $adCtxt["adcredentials"][0]["password"]
+    
+    $relationData = @{
+        "ad_user" = $adUser;
+        "ad_password" = $adPassword;
+        "ad_group" = $adGroup;
+    }
+
+    $rids = Get-JujuRelationIds -Relation 'cinder-backup'
+    foreach ($rid in $rids) {
+        Set-JujuRelation -RelationId $rid -Settings $relationData
+    }
+}
+
 function Invoke-CinderServiceRelationJoinedHook {
     $ctxt = Get-SystemContext
     [String[]]$enabledBackends = Get-EnabledBackends
@@ -610,3 +736,4 @@ function Invoke-MySQLDBRelationJoinedHook {
         Set-JujuRelation -Settings $settings -RelationId $r
     }
 }
+

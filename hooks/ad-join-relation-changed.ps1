@@ -36,12 +36,18 @@ try {
         [String[]]$cinderServices = Get-CinderServiceNames
         foreach($svcName in $cinderServices) {
             Write-JujuInfo "Setting AD user for service '$svcName'"
+            $svc = Get-Service $svcName
+            $currState = $svc.Status
             Stop-Service $svcName
             Set-ServiceLogon -Services $svcName -UserName $adUser -Password $adUserPassword
-            Start-Service $svcName
+
+            if ($currState -eq "Running" -and $svc.StartType -ne "Disabled") {
+                Start-Service $svcName
+            }
         }
         Invoke-WSFCRelationJoinedHook
         Invoke-SMBShareRelationJoinedHook
+        Invoke-CinderBackupRelationJoinedHook
         Invoke-ConfigChangedHook
     }
 } catch {
