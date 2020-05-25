@@ -675,6 +675,7 @@ function Invoke-CinderBackupRelationJoinedHook {
         "ad_user" = $adUser;
         "ad_password" = $adPassword;
         "ad_group" = $adGroup;
+        "ad_domain" = $adCtx["domainName"];
     }
 
     $rids = Get-JujuRelationIds -Relation 'cinder-backup'
