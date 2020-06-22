@@ -49,6 +49,25 @@ function Get-EnabledBackends {
     return $backends
 }
 
+function Enable-MPIO {
+    $cfg = Get-JujuCharmConfig
+    if (!$cfg['enable-multipath-io']) {
+        return $false
+    }
+    $mpioState = Get-WindowsOptionalFeature -Online -FeatureName MultiPathIO
+    if ($mpioState.State -like "Enabled") {
+        Write-JujuWarning "MPIO already enabled"
+        $autoClaim = Get-MSDSMAutomaticClaimSettings
+        if (!$autoclaim.iSCSI) {
+            Enable-MSDSMAutomaticClaim -BusType iSCSI -ErrorAction SilentlyContinue
+        }
+        return $false
+    }
+    Write-JujuWarning "Enabling MultiPathIO feature"
+    Enable-WindowsOptionalFeature -Online -FeatureName MultiPathIO -NoRestart -ErrorAction SilentlyContinue
+    return $true
+}
+
 function New-ExeServiceWrapper {
     $pythonDir = Get-PythonDir -InstallDir $CINDER_INSTALL_DIR
     $python = Join-Path $pythonDir "python.exe"
@@ -547,8 +566,9 @@ function Invoke-InstallHook {
         Write-JujuWarning "Failed to set power scheme."
     }
     Start-TimeResync
+    $mpioReboot = Enable-MPIO
     $renameReboot = Rename-JujuUnit
-    if ($renameReboot) {
+    if ($renameReboot -Or $mpioReboot) {
         Invoke-JujuReboot -Now
     }
     Install-Cinder
@@ -559,6 +579,10 @@ function Invoke-StopHook {
 }
 
 function Invoke-ConfigChangedHook {
+    $mpioReboot = Enable-MPIO
+    if ($mpioReboot) {
+        Invoke-JujuReboot -Now
+    }
     Enable-RequiredWindowsFeatures
     Start-UpgradeOpenStackVersion
     New-CharmServices

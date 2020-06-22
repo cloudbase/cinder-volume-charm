@@ -42,6 +42,11 @@ options:
     type: string
     description: |
       The AZ that all the units of this charm belong to. If not set, it will default to nova AZ.
+  enable-multipath-io:
+    type: boolean
+    default: False
+    description: |
+      Enable MPIO feature. This setting requires a restart.
   ad-computer-group:
     type: string
     default: "cinder-group"
