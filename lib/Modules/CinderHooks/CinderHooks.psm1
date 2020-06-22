@@ -148,6 +148,11 @@ function Get-CharmServices {
                     "generator" = (Get-Item "function:Get-EtcdContext").ScriptBlock
                     "relation" = "etcd"
                     "mandatory" = ($clusterServiceCtx.Count -gt 0)
+                },
+                @{
+                    "generator" = (Get-Item "function:Get-CloudComputeContext").ScriptBlock
+                    "relation" = "cloud-compute"
+                    "mandatory" = $true
                 }
             )
         }
@@ -201,6 +206,11 @@ function Get-CharmServices {
                     "generator" = (Get-Item "function:Get-EtcdContext").ScriptBlock
                     "relation" = "etcd"
                     "mandatory" = ($clusterServiceCtx.Count -gt 0)
+                },
+                @{
+                    "generator" = (Get-Item "function:Get-CloudComputeContext").ScriptBlock
+                    "relation" = "cloud-compute"
+                    "mandatory" = $true
                 }
             )
         }
@@ -271,6 +281,42 @@ function Get-CharmConfigContext {
         $ctxt['default_volume_format'] = $CINDER_DEFAULT_DEFAULT_VOLUME_FORMAT
     }
     return $ctxt
+}
+
+function Get-CloudComputeContext {
+    Write-JujuWarning "Generating context for nova cloud controller"
+    $required = @{
+        "service_protocol" = $null
+        "service_port" = $null
+        "auth_host" = $null
+        "auth_port" = $null
+        "auth_protocol" = $null
+        "service_tenant_name" = $null
+        "service_username" = $null
+        "service_password" = $null
+        "region" = $null
+        "api_version" = $null
+    }
+    $optionalCtx = @{
+        "neutron_url" = $null
+        "quantum_url" = $null
+    }
+    $ctx = Get-JujuRelationContext -Relation 'cloud-compute' -RequiredContext $required -OptionalContext $optionalCtx
+    if (!$ctx.Count -or (!$ctx["neutron_url"] -and !$ctx["quantum_url"])) {
+        Write-JujuWarning "Missing required relation settings for Neutron. Peer not ready?"
+        return @{}
+    }
+    if (!$ctx["neutron_url"]) {
+        $ctx["neutron_url"] = $ctx["quantum_url"]
+    }
+    $ctx["auth_strategy"] = "keystone"
+    $ctx["admin_auth_uri"] = "{0}://{1}:{2}" -f @($ctx["service_protocol"], $ctx['auth_host'], $ctx['service_port'])
+    $ctx["admin_auth_url"] = "{0}://{1}:{2}" -f @($ctx["auth_protocol"], $ctx['auth_host'], $ctx['auth_port'])
+    $identityIDs = Get-KeystoneIdentityIDs -AuthURL $ctx['admin_auth_url'] -ProjectName $ctx['service_tenant_name'] `
+                                           -UserName $ctx['service_username'] -UserPassword $ctx['service_password']
+    $ctx['keystone_user_id'] = $identityIDs['user_id']
+    $ctx['keystone_project_id'] = $identityIDs['project_id']
+    return $ctx
 }
 
 function Get-SystemContext {
