@@ -20,39 +20,39 @@ Import-Module JujuWindowsUtils
 Import-Module JujuHelper
 
 
-$DEFAULT_OPENSTACK_VERSION = 'ocata'
-$SUPPORTED_OPENSTACK_RELEASES = @('mitaka', 'newton', 'ocata', 'stein', 'train')
+$DEFAULT_OPENSTACK_VERSION = 'rocky'
+$SUPPORTED_OPENSTACK_RELEASES = @('rocky', 'stein', 'train')
 $DEFAULT_JUJU_RESOURCE_CONTENT = "Cloudbase default Juju resource"
 
 # Nova constants
 $NOVA_PRODUCT = @{
     'beta_name' = 'OpenStack Hyper-V Compute Beta'
-    'mitaka' = @{
-        'name' = 'OpenStack Hyper-V Compute Mitaka'
-        'version' = '13.0.0'
+    'rocky' = @{
+        'name' = 'OpenStack Hyper-V Compute Rocky'
+        'version' = '18.0.3'
         'default_installer_urls' = @{
-            'msi' = 'https://cloudbase.it/downloads/HyperVNovaCompute_Mitaka_13_0_0.msi#md5=af7421fa96bb0af46c4107550852056e'
-            'zip' = 'https://cloudbase.it/downloads/HyperVNovaCompute_Mitaka_13_0_0.zip#md5=9efe31e847c59886a57007f9dddcfffc'
-        }
-        'compute_driver' = 'hyperv.nova.driver.HyperVDriver'
-        'compute_cluster_driver' = 'hyperv.nova.cluster.driver.HyperVClusterDriver'
-    }
-    'newton' = @{
-        'name' = 'OpenStack Hyper-V Compute Newton'
-        'version' = '14.0.1'
-        'default_installer_urls' = @{
-            'msi' = 'https://cloudbase.it/downloads/HyperVNovaCompute_Newton_14_0_1.msi#md5=d50bc3e2f3335af6d325c0c063e2b358'
-            'zip' = 'https://cloudbase.it/downloads/HyperVNovaCompute_Newton_14_0_1.zip#md5=130954ccf77c7885745e93720f44d4d7'
+            'msi' = 'https://cloudbase.it/downloads/HyperVNovaCompute_Rocky_18_0_3.msi#md5=7ab07a79617aa10e1141738e0e63fa99'
+            'zip' = 'https://cloudbase.it/downloads/HyperVNovaCompute_Rocky_18_0_3.msi#md5=7ab07a79617aa10e1141738e0e63fa99'
         }
         'compute_driver' = 'compute_hyperv.driver.HyperVDriver'
         'compute_cluster_driver' = 'compute_hyperv.cluster.driver.HyperVClusterDriver'
     }
-    'ocata' = @{
-        'name' = 'OpenStack Hyper-V Compute Ocata'
-        'version' = '15.0.0'
+    'stein' = @{
+        'name' = 'OpenStack Hyper-V Compute Stein'
+        'version' = '19.0.0'
         'default_installer_urls' = @{
-            'msi' = 'https://cloudbase.it/downloads/HyperVNovaCompute_Ocata_15_0_0.msi#md5=8929f3dda9daae267b472929c4870344'
-            'zip' = 'https://cloudbase.it/downloads/HyperVNovaCompute_Ocata_15_0_0.zip#md5=4fa48eee30fe7bd1b369f3a821d0f563'
+            'msi' = 'https://cloudbase.it/downloads/HyperVNovaCompute_Stein_19_0_2.msi'
+            'zip' = 'https://cloudbase.it/downloads/HyperVNovaCompute_Stein_19_0_2.msi'
+        }
+        'compute_driver' = 'compute_hyperv.driver.HyperVDriver'
+        'compute_cluster_driver' = 'compute_hyperv.cluster.driver.HyperVClusterDriver'
+    }
+    'train' = @{
+        'name' = 'OpenStack Hyper-V Compute Train'
+        'version' = '20.0.0'
+        'default_installer_urls' = @{
+            'msi' = 'https://cloudbase.it/downloads/HyperVNovaCompute_Train_20_0_0.msi'
+            'zip' = 'https://cloudbase.it/downloads/HyperVNovaCompute_Train_20_0_0.msi'
         }
         'compute_driver' = 'compute_hyperv.driver.HyperVDriver'
         'compute_cluster_driver' = 'compute_hyperv.cluster.driver.HyperVClusterDriver'
@@ -84,28 +84,12 @@ $OVS_DEFAULT_INSTALLER_URL = "https://cloudbase.it/downloads/openvswitch-hyperv-
 # Cinder constants
 $CINDER_PRODUCT = @{
     'beta_name' = 'OpenStack Cinder Volume Beta'
-    'mitaka' = @{
-        'name' = 'OpenStack Cinder Volume Mitaka'
-        'version' = '8.0.0'
+    'rocky' = @{
+        'name' = 'OpenStack Cinder Volume Rocky'
+        'version' = '13.0.1'
         'default_installer_urls' = @{
-            'msi' = 'https://cloudbase.it/downloads/CinderVolumeSetup_Mitaka_8_0_0.msi#md5=122cfccd70daf4273bcd486b2ed1c2ed'
-            'zip' = 'https://cloudbase.it/downloads/CinderVolumeSetup_Mitaka_8_0_0.zip#md5=9b988012a4bc472a50710f5f5adffb79'
-        }
-    }
-    'newton' = @{
-        'name' = 'OpenStack Cinder Volume Newton'
-        'version' = '9.0.0'
-        'default_installer_urls' = @{
-            'msi' = 'https://cloudbase.it/downloads/CinderVolumeSetup_Newton_9_0_0.msi#md5=f534c683b2e79ac1be843071ba9dd76b'
-            'zip' = 'https://cloudbase.it/downloads/CinderVolumeSetup_Newton_9_0_0.zip#md5=0f82568b4b2b9773e6b12d1ba6b69442'
-        }
-    }
-    'ocata' = @{
-        'name' = 'OpenStack Cinder Volume Ocata'
-        'version' = '10.0.0'
-        'default_installer_urls' = @{
-            'msi' = 'https://cloudbase.it/downloads/CinderVolumeSetup_Ocata_10_0_0.msi#md5=53af524d93cecfae56fda9dab9a8deb9'
-            'zip' = 'https://cloudbase.it/downloads/CinderVolumeSetup_Ocata_10_0_0.zip#md5=7a5d9dcdf4b137194f41214599b929a9'
+            'msi' = 'https://cloudbase.it/downloads/CinderVolumeSetup_Rocky_13_0_1.msi'
+            'zip' = 'https://cloudbase.it/downloads/CinderVolumeSetup_Rocky_13_0_1.zip'
         }
     }
     'stein' = @{
