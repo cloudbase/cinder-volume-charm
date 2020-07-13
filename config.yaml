@@ -31,6 +31,22 @@ options:
       A space-separated list of enabled backends for Cinder Volume. Valid choices are:
        * iscsi
        * smb
+  allow-az-fallback:
+    type: boolean
+    default: True
+    description: |
+      Whether or not to allow cinder to use the default AZ if there is no AZ specified.
+      You will want this set to False when there are more than one AZ and cinder volume
+      services.
+  storage-availability-zone:
+    type: string
+    description: |
+      The AZ that all the units of this charm belong to. If not set, it will default to nova AZ.
+  enable-multipath-io:
+    type: boolean
+    default: False
+    description: |
+      Enable MPIO feature. This setting requires a restart.
   ad-computer-group:
     type: string
     default: "cinder-group"
