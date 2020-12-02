@@ -21,22 +21,12 @@ Import-Module JujuHelper
 
 
 $DEFAULT_OPENSTACK_VERSION = 'rocky'
-$SUPPORTED_OPENSTACK_RELEASES = @('rocky', 'stein', 'train')
+$SUPPORTED_OPENSTACK_RELEASES = @('stein', 'train', 'ussuri')
 $DEFAULT_JUJU_RESOURCE_CONTENT = "Cloudbase default Juju resource"
 
 # Nova constants
 $NOVA_PRODUCT = @{
     'beta_name' = 'OpenStack Hyper-V Compute Beta'
-    'rocky' = @{
-        'name' = 'OpenStack Hyper-V Compute Rocky'
-        'version' = '18.0.3'
-        'default_installer_urls' = @{
-            'msi' = 'https://cloudbase.it/downloads/HyperVNovaCompute_Rocky_18_0_3.msi#md5=7ab07a79617aa10e1141738e0e63fa99'
-            'zip' = 'https://cloudbase.it/downloads/HyperVNovaCompute_Rocky_18_0_3.msi#md5=7ab07a79617aa10e1141738e0e63fa99'
-        }
-        'compute_driver' = 'compute_hyperv.driver.HyperVDriver'
-        'compute_cluster_driver' = 'compute_hyperv.cluster.driver.HyperVClusterDriver'
-    }
     'stein' = @{
         'name' = 'OpenStack Hyper-V Compute Stein'
         'version' = '19.0.0'
@@ -84,14 +74,6 @@ $OVS_DEFAULT_INSTALLER_URL = "https://cloudbase.it/downloads/openvswitch-hyperv-
 # Cinder constants
 $CINDER_PRODUCT = @{
     'beta_name' = 'OpenStack Cinder Volume Beta'
-    'rocky' = @{
-        'name' = 'OpenStack Cinder Volume Rocky'
-        'version' = '13.0.1'
-        'default_installer_urls' = @{
-            'msi' = 'https://cloudbase.it/downloads/CinderVolumeSetup_Rocky_13_0_1.msi'
-            'zip' = 'https://cloudbase.it/downloads/CinderVolumeSetup_Rocky_13_0_1.zip'
-        }
-    }
     'stein' = @{
         'name' = 'OpenStack Cinder Volume Stein'
         'version' = '14.0.2'
@@ -108,8 +90,17 @@ $CINDER_PRODUCT = @{
             'zip' = 'https://cloudbase.it/downloads/CinderVolumeSetup_Train_15_0_0.zip'
         }
     }
+    'ussuri' = @{ 
+        'name' = 'OpenStack Cinder Volume Ussuri'
+        'version' = '16.0.0'
+        'default_installer_urls' = @{
+            'msi' = 'https://cloudbase.it/downloads/CinderVolumeSetup_Ussuri_16_0_0_test.msi'
+            'zip' = 'https://cloudbase.it/downloads/CinderVolumeSetup_Ussuri_16_0_0_test.zip'
+        }
+    }
 }
 $CINDER_INSTALL_DIR = Join-Path ${env:ProgramFiles} "Cloudbase Solutions\OpenStack\Cinder"
+$CINDER_CA_CERT = Join-Path $CINDER_INSTALL_DIR "etc\ca_cert.pem"
 $CINDER_ISCSI_BACKEND_NAME = 'iscsi'
 $CINDER_SMB_BACKEND_NAME = 'smb'
 $CINDER_VALID_BACKENDS = @($CINDER_ISCSI_BACKEND_NAME, $CINDER_SMB_BACKEND_NAME)
@@ -445,24 +436,6 @@ function Get-GlanceContext {
         $new[$i.Replace("-", "_")] = $ctx[$i]
     }
     return $new
-}
-
-function Get-MySQLContext {
-    $requiredCtxt = @{
-        "db_host" = $null
-        "password" = $null
-    }
-    $ctxt = Get-JujuRelationContext -Relation "mysql-db" -RequiredContext $requiredCtxt
-    if(!$ctxt.Count) {
-        return @{}
-    }
-    $database, $databaseUser = Get-MySQLConfig
-    return @{
-        'db_host' = $ctxt['db_host']
-        'db_name' = $database
-        'db_user' = $databaseUser
-        'db_user_password' = $ctxt['password']
-    }
 }
 
 function Get-ConfigContext {
