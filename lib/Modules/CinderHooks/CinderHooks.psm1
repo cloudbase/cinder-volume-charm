@@ -22,6 +22,62 @@ Import-Module ADCharmUtils
 Import-Module WSFCCharmUtils
 
 
+function Get-ReadOnlyConfigs {
+    $leaderData = Get-LeaderData
+    if(!$leaderData['read-only-configs']) {
+        return @{}
+    }
+    return (Get-UnmarshaledObject $leaderData['read-only-configs'])
+}
+
+function Set-DomainUserOnServices {
+    $adCtxt = Get-ActiveDirectoryContext
+    if(!$adCtxt["adcredentials"]) {
+        Write-JujuWarning "AD user credentials are not already set"
+        return
+    }
+    $adUser = $adCtxt["adcredentials"][0]["username"]
+    $adUserPassword = $adCtxt["adcredentials"][0]["password"]
+    Grant-PrivilegesOnDomainUser -Username $adUser
+    [String[]]$cinderServices = Get-CinderServiceNames
+    foreach($svcName in $cinderServices) {
+        Write-JujuInfo "Setting AD user for service '$svcName'"
+        $svc = Get-Service $svcName
+        $currState = $svc.Status
+        Stop-Service $svcName
+        Set-ServiceLogon -Services $svcName -UserName $adUser -Password $adUserPassword
+
+        if ($currState -eq "Running" -and $svc.StartType -ne "Disabled") {
+            Start-Service $svcName
+        }
+    }
+}
+
+function Set-ReadOnlyConfigs {
+    $leaderData = Get-LeaderData 'read-only-configs'
+    if($leaderData['read-only-configs']) {
+        Write-JujuWarning "Read only configs are already set"
+        return
+    }
+    if(!(Confirm-Leader)) {
+        Write-JujuWarning "Unit is not leader. Cannot set read only configs"
+        return
+    }
+    $configs = @{}
+    $cfg = Get-JujuCharmConfig
+    $readonlyConfigs = @(
+        'db-prefix')
+    foreach($i in $readonlyConfigs) {
+        if($cfg[$i] -eq $null) {
+            Throw "Config option $i cannot be null"
+        }
+        $configs[$i] = $cfg[$i]
+    }
+    Set-LeaderData -Settings @{
+        'read-only-configs' = Get-MarshaledObject $configs
+    }
+}
+
 function Get-CinderBackupContext {
     $requiredCtxt =  @{
         "cinder_backup_config" = $null;
@@ -150,9 +206,13 @@ function Get-CharmServices {
                     "mandatory" = ($clusterServiceCtx.Count -gt 0)
                 },
                 @{
-                    "generator" = (Get-Item "function:Get-CloudComputeContext").ScriptBlock
-                    "relation" = "cloud-compute"
+                    "generator" = (Get-Item "function:Get-KeystoneCredentialsContext").ScriptBlock
+                    "relation" = "keystone"
                     "mandatory" = $true
+                },
+                @{
+                    "generator" = (Get-Item "function:Get-CertificatesContext").ScriptBlock
+                    "relation" = "certificates"
                 }
             )
         }
@@ -208,9 +268,13 @@ function Get-CharmServices {
                     "mandatory" = ($clusterServiceCtx.Count -gt 0)
                 },
                 @{
-                    "generator" = (Get-Item "function:Get-CloudComputeContext").ScriptBlock
-                    "relation" = "cloud-compute"
+                    "generator" = (Get-Item "function:Get-KeystoneCredentialsContext").ScriptBlock
+                    "relation" = "keystone"
                     "mandatory" = $true
+                },
+                @{
+                    "generator" = (Get-Item "function:Get-CertificatesContext").ScriptBlock
+                    "relation" = "certificates"
                 }
             )
         }
@@ -283,40 +347,80 @@ function Get-CharmConfigContext {
     return $ctxt
 }
 
-function Get-CloudComputeContext {
-    Write-JujuWarning "Generating context for nova cloud controller"
-    $required = @{
-        "service_protocol" = $null
-        "service_port" = $null
-        "auth_host" = $null
-        "auth_port" = $null
-        "auth_protocol" = $null
-        "service_tenant_name" = $null
-        "service_username" = $null
-        "service_password" = $null
+function Get-CertificatesContext {
+    Write-JujuWarning "Generating context for tls-certificates"
+
+    $requiredCtx = @{
+        "ca" = $null
+    }
+
+    $optionalCtx = @{
+        "client.cert" = $null
+        "client.key" = $null
+    }
+
+    $ctxt = Get-JujuRelationContext -Relation "certificates" `
+                                    -OptionalContext $optionalCtx `
+                                    -RequiredContext $requiredCtx
+
+    if (!$ctxt.Count) {
+        return @{}
+    }
+
+    Set-Content $CINDER_CA_CERT $ctxt["ca"]
+    $ctxt["ssl_ca_cert"] = $CINDER_CA_CERT
+
+    return $ctxt
+}
+
+function Get-KeystoneCredentialsContext {
+    Write-JujuWarning "Generating context for keystone credentials"
+    $requiredCtx = @{
+        "credentials_project" = $null
+        "credentials_project_id" = $null
+        "credentials_host" = $null
+        "credentials_port" = $null
+        "credentials_protocol" = $null
+        "credentials_username" = $null
+        "credentials_password" = $null
+        "credentials_project_domain_name" = $null
+        "credentials_user_domain_name" = $null
         "region" = $null
         "api_version" = $null
     }
+
     $optionalCtx = @{
-        "neutron_url" = $null
-        "quantum_url" = $null
+        "ca_cert" = $null
     }
-    $ctx = Get-JujuRelationContext -Relation 'cloud-compute' -RequiredContext $required -OptionalContext $optionalCtx
-    if (!$ctx.Count -or (!$ctx["neutron_url"] -and !$ctx["quantum_url"])) {
-        Write-JujuWarning "Missing required relation settings for Neutron. Peer not ready?"
+    $ctxt = Get-JujuRelationContext -Relation "keystone" `
+                                    -OptionalContext $optionalCtx `
+                                    -RequiredContext $requiredCtx
+
+    if (!$ctxt.Count) {
         return @{}
     }
-    if (!$ctx["neutron_url"]) {
-        $ctx["neutron_url"] = $ctx["quantum_url"]
+
+    if (!$ctxt["api_version"] -or $ctxt["api_version"] -eq 2) {
+        $ctxt["api_version"] = "2.0"
     }
-    $ctx["auth_strategy"] = "keystone"
-    $ctx["admin_auth_uri"] = "{0}://{1}:{2}" -f @($ctx["service_protocol"], $ctx['auth_host'], $ctx['service_port'])
-    $ctx["admin_auth_url"] = "{0}://{1}:{2}" -f @($ctx["auth_protocol"], $ctx['auth_host'], $ctx['auth_port'])
-    $identityIDs = Get-KeystoneIdentityIDs -AuthURL $ctx['admin_auth_url'] -ProjectName $ctx['service_tenant_name'] `
-                                           -UserName $ctx['service_username'] -UserPassword $ctx['service_password']
-    $ctx['keystone_user_id'] = $identityIDs['user_id']
-    $ctx['keystone_project_id'] = $identityIDs['project_id']
-    return $ctx
+
+    $authurl = "{0}://{1}:{2}/v{3}/" -f @(
+                            $ctxt['credentials_protocol'],
+                            $ctxt['credentials_host'],
+                            $ctxt['credentials_port'],
+                            $ctxt['api_version']
+                        )
+
+    $ctxt["admin_auth_url"] = $authurl
+
+    $ksCa = Join-Path $CINDER_INSTALL_DIR "etc\keystone_ca_cert.pem"
+
+    if ($ctxt["ca_cert"]) {
+        Write-FileFromBase64 -File $ksCa -Content $ctxt["ca_cert"]
+        $ctxt["ks_ssl_ca_cert"] = $ksCa
+    }
+
+    return $ctxt
 }
 
 function Get-SystemContext {
@@ -476,6 +580,7 @@ function Get-CinderServiceNames {
     $charmServices = Get-CharmServices
     $serviceNames = @()
     $backupCtx = Get-CinderBackupContext
+    Write-JujuWarning (ConvertTo-Json $backupCtx)
     [String[]]$enabledBackends = Get-EnabledBackends
     if($CINDER_SMB_BACKEND_NAME -in $enabledBackends) {
         $serviceNames += $charmServices['cinder-smb']['service']
@@ -596,6 +701,7 @@ function Get-EtcdContext {
 
 
 function Invoke-InstallHook {
+    Set-ReadOnlyConfigs
     if(!(Get-IsNanoServer)){
         try {
             Set-MpPreference -DisableRealtimeMonitoring $true
@@ -629,6 +735,7 @@ function Invoke-ConfigChangedHook {
     if ($mpioReboot) {
         Invoke-JujuReboot -Now
     }
+    Set-DomainUserOnServices
     Enable-RequiredWindowsFeatures
     Start-UpgradeOpenStackVersion
     New-CharmServices
@@ -740,12 +847,12 @@ function Invoke-CinderBackupRelationJoinedHook {
     $adGroup = "{0}\{1}" -f @($adCtxt['netbiosname'], $cfg['ad-computer-group'])
     $adUser = $adCtxt["adcredentials"][0]["username"]
     $adPassword = $adCtxt["adcredentials"][0]["password"]
-    
+
     $relationData = @{
         "ad_user" = $adUser;
         "ad_password" = $adPassword;
         "ad_group" = $adGroup;
-        "ad_domain" = $adCtx["domainName"];
+        "ad_domain" = $adCtxt["domainName"];
     }
 
     $rids = Get-JujuRelationIds -Relation 'cinder-backup'
@@ -795,12 +902,47 @@ function Invoke-AMQPRelationJoinedHook {
     }
 }
 
+function Get-MySQLContext {
+    $cfg = Get-ReadOnlyConfigs
+    $prefix = $cfg["db-prefix"]
+    $passwdKey = "password"
+    if ($prefix) {
+        $passwdKey = "{0}_password" -f $prefix
+    }
+    $requiredCtxt = @{
+        "db_host" = $null
+        $passwdKey = $null
+    }
+    $ctxt = Get-JujuRelationContext -Relation "mysql-db" -RequiredContext $requiredCtxt
+    if(!$ctxt.Count) {
+        return @{}
+    }
+    $database, $databaseUser = Get-MySQLConfig
+    return @{
+        'db_host' = $ctxt['db_host']
+        'db_name' = $database
+        'db_user' = $databaseUser
+        'db_user_password' = $ctxt[$passwdKey]
+    }
+}
+
 function Invoke-MySQLDBRelationJoinedHook {
     $database, $databaseUser = Get-MySQLConfig
+    $cfg = Get-ReadOnlyConfigs
+    $prefix = $cfg["db-prefix"]
+
+    $dbKey = 'database'
+    $userKey = 'username'
+    $hostnameKey = 'hostname'
+    if ($prefix) {
+        $dbKey = '{0}_database' -f $prefix
+        $userKey = '{0}_username' -f $prefix
+        $hostnameKey = '{0}_hostname' -f $prefix
+    }
     $settings = @{
-        'database' = $database
-        'username' = $databaseUser
-        'hostname' = Get-JujuUnitPrivateIP
+        $dbKey = $database
+        $userKey = $databaseUser
+        $hostnameKey = Get-JujuUnitPrivateIP
     }
     $rids = Get-JujuRelationIds 'mysql-db'
     foreach ($r in $rids) {

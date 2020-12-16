@@ -3,6 +3,12 @@ options:
     type: boolean
     default: False
     description: "Enable debug logging"
+  db-prefix:
+    type: string
+    default: cinder
+    description: |
+      When creating a relation to shared-db, use this prefix for database, username
+      and hostname relation keys.
   verbose:
     type: boolean
     default: False
@@ -128,3 +134,19 @@ options:
       combination of the first 14 (or less, depending on how many digits the unit number has)
       characters of the charm name and the unit number. While this is not infallible,
       It does have less of a chance of creating hostname conflicts.
+  tenant-username:
+    type: string
+    default: cinder
+    description: |
+      The tenant username to request from Keystone.
+  enable-image-volume-cache:
+    type: boolean
+    default: true
+    description: |
+      When enabled, cinder will cache glance images locally.
+  image-volume-cache-size:
+    type: int
+    default: 100
+    description: |
+      The size in GB of the cache for the backend.
+
